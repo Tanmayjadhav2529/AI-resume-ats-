@@ -31,7 +31,15 @@ async def lifespan(app: FastAPI):
         logger.warning(
             f"Failed to load {SPACY_MODEL_PRIMARY}: {e}. Falling back to {SPACY_MODEL_SECONDARY}"
         )
-        app.state.nlp = spacy.load(SPACY_MODEL_SECONDARY)
+        try:
+            app.state.nlp = spacy.load(SPACY_MODEL_SECONDARY)
+            logger.info(f"Loaded {SPACY_MODEL_SECONDARY}")
+        except Exception as fallback_error:
+            logger.warning(
+                f"Failed to load {SPACY_MODEL_SECONDARY}: {fallback_error}. Falling back to blank English model."
+            )
+            app.state.nlp = spacy.blank("en")
+            logger.info("Loaded spaCy blank English model as final fallback")
 
     logger.info(f"Loading SentenceTransformer: {SENTENCE_TRANSFORMER_MODEL}")
     from sentence_transformers import SentenceTransformer
