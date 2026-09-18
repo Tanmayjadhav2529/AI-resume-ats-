@@ -1,7 +1,12 @@
-import os
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import streamlit as st
+
+from frontend.services import api_client, supabase_client
+from frontend.views import history, landing, resources, scorer
 
 st.set_page_config(
     page_title="AI Resume ATS",
@@ -9,65 +14,141 @@ st.set_page_config(
     layout="wide",
 )
 
-with open(Path(__file__).resolve().parent / "styles.css") as f:
+with open(Path(__file__).resolve().parent / "assets" / "styles.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-st.title("AI Resume ATS Analyzer")
-st.caption("Upload your resume and compare it against a job description in real time.")
+for key, default in {
+    "access_token": None,
+    "refresh_token": None,
+    "user_id": None,
+    "user_email": None,
+    "auth_error": "",
+    "auth_info": "",
+    "current_view": "landing",
+    "analysis_result": None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-with st.container():
-    col1, col2 = st.columns([1.2, 1])
-    with col1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload resume", type=["pdf", "docx", "doc"])
-        job_description = st.text_area(
-            "Paste job description",
-            height=220,
-            placeholder="Paste the JD here...")
-        submit = st.button("Analyze Resume", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Quick stats")
-        st.metric("ATS Score", "--")
-        st.metric("Keyword Match", "--")
-        st.metric("Skills Gap", "--")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-if submit:
-    if uploaded_file is None:
-        st.warning("Please upload a resume first.")
-    elif not job_description.strip():
-        st.warning("Please paste a job description to compare against.")
+if "code" in st.query_params and not st.session_state.access_token:
+    code = st.query_params["code"]
+    result = supabase_client.exchange_code_for_session(code)
+    if "error" in result:
+        st.session_state.auth_error = result["error"]
     else:
-        with st.spinner("Analyzing your resume..."):
-            st.success("Frontend ready. Connect this form to the backend API to fetch live analysis.")
-            st.code(
-                {
-                    "file": uploaded_file.name,
-                    "job_description_length": len(job_description),
-                    "status": "waiting_for_backend",
-                },
-                language="json",
-            )
+        st.session_state.access_token = result.get("access_token")
+        st.session_state.refresh_token = result.get("refresh_token")
+        st.session_state.user_id = result.get("user_id")
+        st.session_state.user_email = result.get("email")
+        st.session_state.auth_info = "Signed in with Google."
+        st.session_state.current_view = "scorer"
+    st.query_params.clear()
+    st.rerun()
 
-st.markdown("---")
 
-left, center, right = st.columns(3)
-with left:
-    st.markdown('<div class="metric-box"><h4>Skill Coverage</h4><p>--</p></div>', unsafe_allow_html=True)
-with center:
-    st.markdown('<div class="metric-box"><h4>Experience Match</h4><p>--</p></div>', unsafe_allow_html=True)
-with right:
-    st.markdown('<div class="metric-box"><h4>Improvement Score</h4><p>--</p></div>', unsafe_allow_html=True)
+def set_view(view_name: str):
+    st.session_state.current_view = view_name
+    st.rerun()
 
-st.subheader("Issues found")
-for i in range(3):
-    st.markdown(
-        '<div class="issue-box"><strong>Issue #1</strong><br>Missing project evidence or keyword alignment.</div>',
-        unsafe_allow_html=True,
-    )
 
-st.subheader("Matched keywords")
-for tag in ["Python", "FastAPI", "SQL", "Machine Learning", "React"]:
-    st.markdown(f'<span class="keyword-chip">{tag}</span>', unsafe_allow_html=True)
+def sign_out():
+    supabase_client.sign_out()
+    st.session_state.access_token = None
+    st.session_state.refresh_token = None
+    st.session_state.user_id = None
+    st.session_state.user_email = None
+    st.session_state.auth_error = ""
+    st.session_state.auth_info = "Signed out."
+    st.session_state.current_view = "landing"
+    st.rerun()
+
+
+with st.sidebar:
+    st.title("Navigation")
+    for name, label in [("landing", "Home"), ("scorer", "Scorer"), ("history", "History"), ("resources", "Resources")]:
+        if st.button(label, use_container_width=True, key=f"nav-{name}"):
+            set_view(name)
+
+    st.markdown("---")
+    st.subheader("Account")
+
+    if st.session_state.access_token:
+        st.write(f"Signed in as: {st.session_state.user_email or 'user'}")
+        if st.button("Sign out", use_container_width=True):
+            sign_out()
+    else:
+        sign_in_tab, sign_up_tab = st.tabs(["Sign In", "Sign Up"])
+
+        with sign_in_tab:
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            if st.button("Sign in", use_container_width=True):
+                if not email or not password:
+                    st.session_state.auth_error = "Email and password are required."
+                else:
+                    result = supabase_client.sign_in_with_password(email, password)
+                    if "error" in result:
+                        st.session_state.auth_error = result["error"]
+                    else:
+                        st.session_state.access_token = result.get("access_token")
+                        st.session_state.refresh_token = result.get("refresh_token")
+                        st.session_state.user_id = result.get("user_id")
+                        st.session_state.user_email = result.get("email")
+                        st.session_state.auth_error = ""
+                        st.session_state.auth_info = "Signed in successfully."
+                        st.session_state.current_view = "scorer"
+                        st.rerun()
+
+        with sign_up_tab:
+            email = st.text_input("Email", key="signup_email")
+            password = st.text_input("Password", type="password", key="signup_password")
+            if st.button("Create account", use_container_width=True):
+                if not email or not password:
+                    st.session_state.auth_error = "Email and password are required."
+                else:
+                    result = supabase_client.sign_up_with_password(email, password)
+                    if result.get("error"):
+                        st.session_state.auth_error = result["error"]
+                    elif result.get("pending_confirmation"):
+                        st.session_state.auth_info = "Account created. Check your email to confirm before signing in."
+                        st.session_state.auth_error = ""
+                    else:
+                        st.session_state.access_token = result.get("access_token")
+                        st.session_state.refresh_token = result.get("refresh_token")
+                        st.session_state.user_id = result.get("user_id")
+                        st.session_state.user_email = result.get("email")
+                        st.session_state.auth_info = "Account created successfully."
+                        st.session_state.auth_error = ""
+                        st.session_state.current_view = "scorer"
+                        st.rerun()
+
+        google_url = supabase_client.google_oauth_url()
+        if "error" in google_url:
+            st.warning(google_url["error"])
+        else:
+            if st.button("Continue with Google", use_container_width=True):
+                st.session_state.auth_error = ""
+                st.link_button("Continue with Google", google_url["url"])
+
+    if st.session_state.auth_error:
+        st.error(st.session_state.auth_error)
+    if st.session_state.auth_info:
+        st.success(st.session_state.auth_info)
+
+
+if st.session_state.current_view == "landing":
+    landing.render()
+elif st.session_state.current_view == "scorer":
+    scorer.render()
+elif st.session_state.current_view == "history":
+    history.render()
+elif st.session_state.current_view == "resources":
+    resources.render()
+else:
+    landing.render()
+
+# Keep backend health info available without blocking the app when auth is not configured yet.
+try:
+    api_client.health_check()
+except Exception:
+    pass
