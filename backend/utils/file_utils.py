@@ -64,6 +64,11 @@ class FileParsingError(Exception):
     pass
 
 
+class FileValidationError(Exception):
+    """Raised when an uploaded file is invalid or unsupported."""
+    pass
+
+
 class TextExtractionError(Exception):
     """Raised when text cannot be extracted from a file."""
 

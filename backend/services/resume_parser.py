@@ -7,6 +7,8 @@ from docx import Document
 import PyPDF2
 
 from backend.utils.file_utils import (
+    FileParsingError,
+    FileValidationError,
     TextExtractionError,
     FileUploadError,
     log_error,
@@ -20,14 +22,6 @@ from backend.core.config import (
     MAX_FILE_SIZE_MB,
     SUPPORTED_MIME_TYPES,
 )
-
-
-class FileParsingError(Exception):
-    pass
-
-
-class FileValidationError(Exception):
-    pass
 
 
 def validate_file(
@@ -52,28 +46,40 @@ def validate_file(
             "Please check the file you have uploaded and try again."
         ), None
 
+    guessed_type = None
+    lower_name = (filename or "").lower()
+    ext = lower_name.rsplit(".", 1)[-1] if "." in lower_name else ""
+
+    if ext in {"pdf", "doc", "docx"}:
+        guessed_type = {
+            "pdf": "application/pdf",
+            "doc": "application/msword",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }.get(ext)
+
     try:
-        mime_type = magic.from_buffer(
-            file_data,
-            mime=True
-        )
-
+        detected_mime = magic.from_buffer(file_data, mime=True)
     except Exception as e:
-        return False, (
-            f"Error determining the file type: {e}"
-        ), None
+        detected_mime = None
 
-    if mime_type not in SUPPORTED_MIME_TYPES:
-        supported = ", ".join(
-            SUPPORTED_MIME_TYPES.keys()
-        ).upper()
+    mime_type = detected_mime or guessed_type
 
-        return False, (
-            f"Unsupported file type: {mime_type}. "
-            f"Please upload one of: {supported}."
-        ), None
+    if mime_type in SUPPORTED_MIME_TYPES:
+        return True, "", SUPPORTED_MIME_TYPES[mime_type]
 
-    return True, "", SUPPORTED_MIME_TYPES[mime_type]
+    # Some real docx files are detected as generic zip content, and some minimal
+    # PDF fixtures are not recognized consistently by the system magic library.
+    if ext == "docx" and file_data.startswith(b"PK"):
+        return True, "", "docx"
+
+    if ext == "pdf" and file_data.startswith(b"%PDF"):
+        return True, "", "pdf"
+
+    supported = ", ".join(SUPPORTED_MIME_TYPES.keys()).upper()
+    return False, (
+        f"Unsupported file type: {mime_type}. "
+        f"Please upload one of: {supported}."
+    ), None
 
 
 def _extract_pdf_hyperlinks(file_data: bytes) -> str:
