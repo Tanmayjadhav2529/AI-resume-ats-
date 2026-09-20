@@ -77,17 +77,21 @@ async def get_user_history(user_id: str) -> List[Dict]:
             
             results = []
             for doc in docs:
+                analysis_res = doc.get("analysis_result") or {}
+                parsed_title = analysis_res.get("parsed_jd_job_title") or ""
+                job_title = parsed_title.strip() if parsed_title and str(parsed_title).strip() else "General ATS Analysis"
+
                 results.append({
                     "id": str(doc.get("id")),
                     "filename": doc.get("filename", "resume"),
                     "resume_name": doc.get("filename", "resume"),
-                    "job_title": "Software Engineer",
+                    "job_title": job_title,
                     "ats_score": doc.get("ats_score", 0),
                     "keyword_match": doc.get("keyword_match", 0),
                     "missing_keywords": doc.get("missing_keywords", []),
                     "date": doc.get("created_at", ""),
                     "created_at": doc.get("created_at", ""),
-                    "analysis_result": doc.get("analysis_result", {}),
+                    "analysis_result": analysis_res,
                 })
             return results
     except Exception as exc:

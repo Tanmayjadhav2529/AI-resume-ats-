@@ -102,11 +102,15 @@ async def analyze_resume(
         jd_match_analysis=jd_comparison_result,
         skill_validation_details=skill_val_details,
 
-        # Retro-compatibility fields
+        # Retro-compatibility & analysis fields
         ats_score=result['ats_score'],
         keyword_match=jd_comparison_result.match_percentage if jd_comparison_result else 0.0,
         missing_keywords=result.get('missing_keywords', []),
         matched_keywords=result.get('matched_keywords', []),
+        suggestions=result.get('suggestions', []),
+        strengths=result.get('strengths', []),
+        critical_issues=result.get('critical_issues', []),
+        warnings=result.get('warnings', []),
         skills=list(result.get('skills', [])[:20]),
         jd_comparison=jd_comparison_result,
         interpretation=result.get('interpretation', '')
@@ -126,8 +130,8 @@ async def health_check(request: Request):
     """Health check — confirms models are loaded and the API is ready."""
     return {
         'status':          'healthy',
-        'nlp_loaded':      request.app.state.nlp is not None,
-        'embedder_loaded': request.app.state.embedder is not None,
+        'nlp_loaded':      getattr(request.app.state, 'nlp', None) is not None,
+        'embedder_loaded': getattr(request.app.state, 'embedder', None) is not None,
     }
 
 @router.get('/history')

@@ -1,5 +1,9 @@
 import io
-import magic
+try:
+    import magic
+except Exception:
+    magic = None
+
 from typing import Tuple, Optional
 
 import pdfplumber
@@ -57,10 +61,12 @@ def validate_file(
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         }.get(ext)
 
-    try:
-        detected_mime = magic.from_buffer(file_data, mime=True)
-    except Exception as e:
-        detected_mime = None
+    detected_mime = None
+    if magic is not None:
+        try:
+            detected_mime = magic.from_buffer(file_data, mime=True)
+        except Exception:
+            detected_mime = None
 
     mime_type = detected_mime or guessed_type
 
@@ -148,13 +154,6 @@ def _extract_pdf_with_pdfplumber(
             if page_text:
                 text += page_text + "\n"
 
-    if not text.strip():
-
-        raise TextExtractionError(
-            "pdfplumber extracted no text",
-            user_message="No text could be extracted from the PDF."
-        )
-
     hyperlinks = _extract_pdf_hyperlinks(
         file_data
     )
@@ -185,13 +184,6 @@ def _extract_pdf_with_pypdf2(
 
         if page_text:
             text += page_text + "\n"
-
-    if not text.strip():
-
-        raise TextExtractionError(
-            "PyPDF2 extracted no text",
-            user_message="No text could be extracted from the PDF."
-        )
 
     hyperlinks = _extract_pdf_hyperlinks(
         file_data
