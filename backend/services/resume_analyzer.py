@@ -16,6 +16,7 @@ from backend.services.ats_scorer import (
     generate_improvements as generate_scorer_improvements,
 )
 from backend.services.recommendation_engine import generate_all_recommendations
+from backend.services.grammar_checker import analyze_grammar
 from backend.utils.file_utils import (
     get_default_grammar_results,
     get_default_location_results,
@@ -96,9 +97,11 @@ def analyze_full_resume(
         location_results = get_default_location_results()
 
     # 5. Grammar Analysis
-    # Note: Automated grammar analysis (e.g., LanguageTool) is not installed in the current environment.
-    # We use default structure (no penalty) so the system does NOT claim fake grammar results.
-    grammar_results = get_default_grammar_results()
+    try:
+        grammar_results = analyze_grammar(resume_text)
+    except Exception as exc:
+        logger.warning(f"Grammar analysis failed: {exc}")
+        grammar_results = get_default_grammar_results()
 
     # 6. ATS Scoring
     scores = calculate_overall_score(

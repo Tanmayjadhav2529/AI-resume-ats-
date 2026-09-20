@@ -27,10 +27,14 @@ def detect_location_info(text: str, nlp: spacy.Language) -> Dict:
     locations = []
 
     #method01: spacy NER
-    doc = nlp(text)
-    for ent in doc.ents:
-        if ent.label_ in ['GPE', 'LOC']:
-            locations.append({'text': ent.text, 'type': ent.label_.lower(), 'start': ent.start_char})
+    try:
+        doc = nlp(text)
+        if hasattr(doc, 'ents'):
+            for ent in doc.ents:
+                if ent.label_ in ['GPE', 'LOC']:
+                    locations.append({'text': ent.text, 'type': ent.label_.lower(), 'start': ent.start_char})
+    except Exception as e:
+        log_warning(f"Location NER detection skipped: {e}", context='ats_scorer')
 
     #moetod02: street address regx
     for match in re.finditer(STREET_ADDRESS_PATTERN, text, re.IGNORECASE):
@@ -302,31 +306,28 @@ def calculate_overall_score(
     jd_keywords: Optional[List[str]] = None,
     experience_months: int = 0,
 ) -> Dict:
-
+    """
+    Score Formula Alignment with config.SCORE_WEIGHTS:
+    - Formatting: max 20.0
+    - Keywords: max 25.0
+    - Content Quality: max 25.0
+    - Skill Validation: max 15.0
+    - ATS Compatibility: max 15.0
+    Base score = sum of the 5 component max scores (Total max 100.0).
+    Bonuses and penalties are applied to base_score, clamped between 0.0 and 100.0.
+    """
     formatting_score        = _calc_formatting_score(parsed_resume, text)
     keywords_score          = _calc_keywords_score(keywords, skills, jd_keywords)
     content_score           = _calc_content_score(text, action_verbs, grammar_results)
     skill_validation_score  = _calc_skill_validation_score(skill_validation_results)
     ats_compatibility_score = _calc_ats_compatibility_score(text, location_results, parsed_resume)
 
-    COMPONENT_MAX = {
-        'formatting': 20.0, 'keywords': 25.0, 'content': 25.0,
-        'skill_validation': 15.0, 'ats_compatibility': 15.0,
-    }
-
-    formatting_pct        = (formatting_score        / COMPONENT_MAX['formatting'])        * 100.0
-    keywords_pct          = (keywords_score          / COMPONENT_MAX['keywords'])          * 100.0
-    content_pct           = (content_score           / COMPONENT_MAX['content'])           * 100.0
-    skill_validation_pct  = (skill_validation_score  / COMPONENT_MAX['skill_validation'])  * 100.0
-    ats_compatibility_pct = (ats_compatibility_score / COMPONENT_MAX['ats_compatibility']) * 100.0
-
-    skills_keywords_pct = (keywords_pct * 0.6) + (skill_validation_pct * 0.4)
-
     base_score = (
-        skills_keywords_pct   * 0.40 +
-        content_pct           * 0.30 +
-        formatting_pct        * 0.15 +
-        ats_compatibility_pct * 0.15
+        formatting_score +
+        keywords_score +
+        content_score +
+        skill_validation_score +
+        ats_compatibility_score
     )
 
     penalties = {}
@@ -378,7 +379,8 @@ def calculate_overall_score(
         'ats_compatibility_score': round(ats_compatibility_score, 1),
         'overall_interpretation':  interpretation,
         'penalties':               penalties,
-        'bonuses':                 bonuses,}
+        'bonuses':                 bonuses,
+    }
 
 #Overall score calculation and interpretation
 def generate_strengths(

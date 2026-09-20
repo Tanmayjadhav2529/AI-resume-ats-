@@ -19,6 +19,9 @@ def _get_headers():
     }
 
 async def save_analysis(user_id: str, filename: str, analysis_result: Dict) -> Optional[str]:
+    if not user_id or not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+
     headers = _get_headers()
     if not headers:
         return None
@@ -40,7 +43,7 @@ async def save_analysis(user_id: str, filename: str, analysis_result: Dict) -> O
     }
 
     url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/analyses"
-    
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=doc)
@@ -51,8 +54,16 @@ async def save_analysis(user_id: str, filename: str, analysis_result: Dict) -> O
                 logger.info(f"Saved analysis for user {user_id}: {inserted_id}")
                 return inserted_id
             return None
-    except Exception as exc:
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        detail = exc.response.text if exc.response is not None else str(exc)
+        if status_code in (400, 404, 409) or "relation" in detail.lower() or "column" in detail.lower():
+            logger.warning(f"Supabase history save skipped: schema/config mismatch or missing table: {detail}")
+            return None
         logger.error(f"Failed to save analysis to Supabase: {exc}")
+        return None
+    except Exception as exc:
+        logger.warning(f"History save skipped because Supabase is unavailable: {exc}")
         return None
 
 async def get_user_history(user_id: str) -> List[Dict]:
