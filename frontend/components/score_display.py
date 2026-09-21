@@ -6,7 +6,6 @@ def display_overall_score(data):
         return
 
     score = data.get("ATS_score", data.get("ats_score", 0))
-
     st.subheader("ATS Score")
     st.metric(
         "Overall ATS Score",
